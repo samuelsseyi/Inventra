@@ -9,47 +9,60 @@ $error = null;
 
 try {
     // Get total products value
-    $result = $conn->query("SELECT SUM(quantity * unit_price) as total_value FROM products");
-    $total_value = $result->fetch_assoc()['total_value'] ?? 0;
+    $stmt = $conn->prepare("SELECT SUM(quantity * unit_price) as total_value FROM products WHERE user_id = ?");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $total_value = $stmt->get_result()->fetch_assoc()['total_value'] ?? 0;
 
     // Get low stock products
-    $result = $conn->query("
+    $stmt = $conn->prepare("
         SELECT p.*, c.name as category_name 
         FROM products p 
         LEFT JOIN categories c ON p.category_id = c.id 
-        WHERE p.quantity <= p.reorder_level 
+        WHERE p.user_id = ? AND p.quantity <= p.reorder_level 
         ORDER BY p.quantity ASC
     ");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $low_stock = [];
     while ($row = $result->fetch_assoc()) {
         $low_stock[] = $row;
     }
 
     // Get stock movement summary
-    $result = $conn->query("
+    $stmt = $conn->prepare("
         SELECT 
             DATE(created_at) as date,
             type,
             SUM(quantity) as total_quantity
         FROM stock_movements
+        WHERE user_id = ?
         GROUP BY DATE(created_at), type
         ORDER BY date DESC
         LIMIT 7
     ");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $movements = [];
     while ($row = $result->fetch_assoc()) {
         $movements[] = $row;
     }
 
     // Get top products by value
-    $result = $conn->query("
+    $stmt = $conn->prepare("
         SELECT p.*, c.name as category_name,
                (p.quantity * p.unit_price) as total_value
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
+        WHERE p.user_id = ?
         ORDER BY total_value DESC
         LIMIT 5
     ");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $top_products = [];
     while ($row = $result->fetch_assoc()) {
         $top_products[] = $row;
