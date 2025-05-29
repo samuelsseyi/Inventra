@@ -14,9 +14,9 @@ $sort = $_GET['sort'] ?? 'name_asc';
 $query = "SELECT p.*, c.name as category_name 
           FROM products p 
           LEFT JOIN categories c ON p.category_id = c.id 
-          WHERE 1=1";
-$params = [];
-$types = "";
+          WHERE p.user_id = ?";
+$params = [$_SESSION['user_id']];
+$types = "i";
 
 // Add search condition
 if (!empty($search)) {
@@ -49,22 +49,21 @@ switch ($sort) {
 }
 
 try {
-    // Get categories for filter
-    $result = $conn->query("SELECT id, name FROM categories ORDER BY name");
+    // Get categories for filter (only user's categories)
+    $stmt = $conn->prepare("SELECT id, name FROM categories WHERE user_id = ? ORDER BY name");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $categories = [];
     while ($row = $result->fetch_assoc()) {
         $categories[] = $row;
     }
 
     // Get products
-    if (!empty($params)) {
-        $stmt = $conn->prepare($query);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $result = $stmt->get_result();
-    } else {
-        $result = $conn->query($query);
-    }
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
     
     $products = [];
     while ($row = $result->fetch_assoc()) {

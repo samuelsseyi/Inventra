@@ -13,28 +13,41 @@ $recent_movements = [];
 
 try {
     // Get total products
-    $result = $conn->query("SELECT COUNT(*) as count FROM products");
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM products WHERE user_id = ?");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     $total_products = $row['count'];
 
     // Get low stock products count
-    $result = $conn->query("SELECT COUNT(*) as count FROM products WHERE quantity <= reorder_level");
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM products WHERE user_id = ? AND quantity <= reorder_level");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     $low_stock_count = $row['count'];
 
     // Get total categories
-    $result = $conn->query("SELECT COUNT(*) as count FROM categories");
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM categories WHERE user_id = ?");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     $total_categories = $row['count'];
 
     // Get recent stock movements
-    $result = $conn->query("
+    $stmt = $conn->prepare("
         SELECT sm.*, p.name as product_name 
         FROM stock_movements sm
         JOIN products p ON sm.product_id = p.id
+        WHERE sm.user_id = ?
         ORDER BY sm.created_at DESC 
         LIMIT 5
     ");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $recent_movements = [];
     while ($row = $result->fetch_assoc()) {
         $recent_movements[] = $row;

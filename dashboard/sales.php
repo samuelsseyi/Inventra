@@ -23,14 +23,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->begin_transaction();
 
             // Get product details
-            $stmt = $conn->prepare("SELECT name, quantity as current_stock, unit_price FROM products WHERE id = ?");
-            $stmt->bind_param("i", $product_id);
+            $stmt = $conn->prepare("SELECT name, quantity as current_stock, unit_price FROM products WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("ii", $product_id, $_SESSION['user_id']);
             $stmt->execute();
             $result = $stmt->get_result();
             $product = $result->fetch_assoc();
 
             if (!$product) {
-                throw new Exception("Product not found.");
+                throw new Exception("Product not found or access denied.");
             }
 
             if ($quantity > $product['current_stock']) {
@@ -41,18 +41,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $total_amount = $quantity * $product['unit_price'];
 
             // Record sale
-            $stmt = $conn->prepare("INSERT INTO sales (product_id, quantity, unit_price, total_amount, customer_name, payment_method) VALUES (?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("iiddss", $product_id, $quantity, $product['unit_price'], $total_amount, $customer_name, $payment_method);
+            $stmt = $conn->prepare("INSERT INTO sales (user_id, product_id, quantity, unit_price, total_amount, customer_name, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("iiiddss", $_SESSION['user_id'], $product_id, $quantity, $product['unit_price'], $total_amount, $customer_name, $payment_method);
             $stmt->execute();
 
             // Update stock
-            $stmt = $conn->prepare("UPDATE products SET quantity = quantity - ? WHERE id = ?");
-            $stmt->bind_param("ii", $quantity, $product_id);
+            $stmt = $conn->prepare("UPDATE products SET quantity = quantity - ? WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("iii", $quantity, $product_id, $_SESSION['user_id']);
             $stmt->execute();
 
             // Add stock movement record
-            $stmt = $conn->prepare("INSERT INTO stock_movements (product_id, type, quantity, reason) VALUES (?, 'out', ?, 'Sale')");
-            $stmt->bind_param("ii", $product_id, $quantity);
+            $stmt = $conn->prepare("INSERT INTO stock_movements (user_id, product_id, type, quantity, reason) VALUES (?, ?, 'out', ?, 'Sale')");
+            $stmt->bind_param("iii", $_SESSION['user_id'], $product_id, $quantity);
             $stmt->execute();
 
             // Commit transaction
@@ -68,7 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get products for dropdown
 try {
-    $result = $conn->query("SELECT id, name, quantity, unit_price FROM products WHERE quantity > 0 ORDER BY name");
+    $stmt = $conn->prepare("SELECT id, name, quantity, unit_price FROM products WHERE quantity > 0 AND user_id = ? ORDER BY name");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $products = [];
     while ($row = $result->fetch_assoc()) {
         $products[] = $row;
@@ -80,13 +83,17 @@ try {
 
 // Get recent sales
 try {
-    $result = $conn->query("
+    $stmt = $conn->prepare("
         SELECT s.*, p.name as product_name 
         FROM sales s
         JOIN products p ON s.product_id = p.id
+        WHERE s.user_id = ?
         ORDER BY s.created_at DESC 
         LIMIT 10
     ");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $sales = [];
     while ($row = $result->fetch_assoc()) {
         $sales[] = $row;

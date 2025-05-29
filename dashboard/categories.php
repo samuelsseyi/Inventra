@@ -19,13 +19,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             if ($id) {
-                // Update existing category
-                $stmt = $conn->prepare("UPDATE categories SET name = ?, description = ? WHERE id = ?");
-                $stmt->bind_param("ssi", $name, $description, $id);
+                // Update existing category (verify ownership first)
+                $stmt = $conn->prepare("SELECT user_id FROM categories WHERE id = ?");
+                $stmt->bind_param("i", $id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $category = $result->fetch_assoc();
+                
+                if (!$category || $category['user_id'] !== $_SESSION['user_id']) {
+                    throw new Exception("Category not found or access denied.");
+                }
+                
+                // Update category
+                $stmt = $conn->prepare("UPDATE categories SET name = ?, description = ? WHERE id = ? AND user_id = ?");
+                $stmt->bind_param("ssii", $name, $description, $id, $_SESSION['user_id']);
             } else {
                 // Insert new category
-                $stmt = $conn->prepare("INSERT INTO categories (name, description) VALUES (?, ?)");
-                $stmt->bind_param("ss", $name, $description);
+                $stmt = $conn->prepare("INSERT INTO categories (user_id, name, description) VALUES (?, ?, ?)");
+                $stmt->bind_param("iss", $_SESSION['user_id'], $name, $description);
             }
             
             if ($stmt->execute()) {
@@ -38,9 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all categories
+// Get all categories for the current user
 try {
-    $result = $conn->query("SELECT * FROM categories ORDER BY name");
+    $stmt = $conn->prepare("SELECT * FROM categories WHERE user_id = ? ORDER BY name");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $categories = [];
     while ($row = $result->fetch_assoc()) {
         $categories[] = $row;
@@ -116,8 +130,8 @@ ob_start();
                                 <td><?php echo htmlspecialchars($category['description']); ?></td>
                                 <td>
                                     <?php
-                                    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM products WHERE category_id = ?");
-                                    $stmt->bind_param("i", $category['id']);
+                                    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM products WHERE category_id = ? AND user_id = ?");
+                                    $stmt->bind_param("ii", $category['id'], $_SESSION['user_id']);
                                     $stmt->execute();
                                     $result = $stmt->get_result();
                                     $count = $result->fetch_assoc()['count'];

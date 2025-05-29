@@ -22,15 +22,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Start transaction
             $conn->begin_transaction();
 
+            // Verify product ownership
+            $stmt = $conn->prepare("SELECT id FROM products WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("ii", $product_id, $_SESSION['user_id']);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if (!$result->fetch_assoc()) {
+                throw new Exception("Product not found or access denied.");
+            }
+
             // Add stock movement record
-            $stmt = $conn->prepare("INSERT INTO stock_movements (product_id, type, quantity, reason) VALUES (?, ?, ?, ?)");
-            $stmt->bind_param("isis", $product_id, $type, $quantity, $reason);
+            $stmt = $conn->prepare("INSERT INTO stock_movements (user_id, product_id, type, quantity, reason) VALUES (?, ?, ?, ?, ?)");
+            $stmt->bind_param("iisis", $_SESSION['user_id'], $product_id, $type, $quantity, $reason);
             $stmt->execute();
 
             // Update product quantity
             $quantity_change = $type === 'in' ? $quantity : -$quantity;
-            $stmt = $conn->prepare("UPDATE products SET quantity = quantity + ? WHERE id = ?");
-            $stmt->bind_param("ii", $quantity_change, $product_id);
+            $stmt = $conn->prepare("UPDATE products SET quantity = quantity + ? WHERE id = ? AND user_id = ?");
+            $stmt->bind_param("iii", $quantity_change, $product_id, $_SESSION['user_id']);
             $stmt->execute();
 
             // Commit transaction
@@ -39,14 +48,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (Exception $e) {
             $conn->rollback();
             error_log($e->getMessage());
-            $error = "An error occurred while updating stock.";
+            $error = $e->getMessage();
         }
     }
 }
 
 // Get products for dropdown
 try {
-    $result = $conn->query("SELECT id, name, quantity FROM products ORDER BY name");
+    $stmt = $conn->prepare("SELECT id, name, quantity FROM products WHERE user_id = ? ORDER BY name");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $products = [];
     while ($row = $result->fetch_assoc()) {
         $products[] = $row;
@@ -58,16 +70,20 @@ try {
 
 // Get recent stock movements
 try {
-    $result = $conn->query("
+    $stmt = $conn->prepare("
         SELECT sm.*, p.name as product_name 
         FROM stock_movements sm
         JOIN products p ON sm.product_id = p.id
+        WHERE sm.user_id = ?
         ORDER BY sm.created_at DESC 
         LIMIT 10
     ");
-    $movements = [];
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $stock_movements = [];
     while ($row = $result->fetch_assoc()) {
-        $movements[] = $row;
+        $stock_movements[] = $row;
     }
 } catch (Exception $e) {
     error_log($e->getMessage());
@@ -137,7 +153,7 @@ ob_start();
         <div class="dashboard-card">
             <h5 class="mb-4">Recent Stock Movements</h5>
             
-            <?php if (empty($movements)): ?>
+            <?php if (empty($stock_movements)): ?>
                 <div class="text-center py-5">
                     <i class="fas fa-box fa-3x text-muted mb-3"></i>
                     <h5>No Stock Movements</h5>
@@ -156,7 +172,7 @@ ob_start();
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($movements as $movement): ?>
+                            <?php foreach ($stock_movements as $movement): ?>
                             <tr>
                                 <td><?php echo date('M j, Y g:i A', strtotime($movement['created_at'])); ?></td>
                                 <td><?php echo htmlspecialchars($movement['product_name']); ?></td>

@@ -19,7 +19,10 @@ $product = [
 
 // Get categories for dropdown
 try {
-    $result = $conn->query("SELECT id, name FROM categories ORDER BY name");
+    $stmt = $conn->prepare("SELECT id, name FROM categories WHERE user_id = ? ORDER BY name");
+    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->execute();
+    $result = $stmt->get_result();
     $categories = [];
     while ($row = $result->fetch_assoc()) {
         $categories[] = $row;
@@ -49,38 +52,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         try {
             if (isset($_GET['id'])) {
+                // Verify product ownership
+                $stmt = $conn->prepare("SELECT user_id FROM products WHERE id = ?");
+                $stmt->bind_param("i", $_GET['id']);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $existing = $result->fetch_assoc();
+
+                if (!$existing || $existing['user_id'] !== $_SESSION['user_id']) {
+                    throw new Exception("Product not found or access denied.");
+                }
+
                 // Update existing product
                 $stmt = $conn->prepare("
                     UPDATE products 
                     SET name = ?, description = ?, sku = ?, category_id = ?, 
                         quantity = ?, unit_price = ?, reorder_level = ?
-                    WHERE id = ?
+                    WHERE id = ? AND user_id = ?
                 ");
-                $stmt->bind_param("sssiidii",
+                $stmt->bind_param("sssiidiii",
                     $product['name'], $product['description'], $product['sku'],
                     $product['category_id'], $product['quantity'], $product['unit_price'],
-                    $product['reorder_level'], $_GET['id']
+                    $product['reorder_level'], $_GET['id'], $_SESSION['user_id']
                 );
-                $stmt->execute();
             } else {
                 // Insert new product
                 $stmt = $conn->prepare("
-                    INSERT INTO products (name, description, sku, category_id, 
+                    INSERT INTO products (user_id, name, description, sku, category_id, 
                                        quantity, unit_price, reorder_level)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ");
-                $stmt->bind_param("sssiidi",
-                    $product['name'], $product['description'], $product['sku'],
+                $stmt->bind_param("isssiidd",
+                    $_SESSION['user_id'], $product['name'], $product['description'], $product['sku'],
                     $product['category_id'], $product['quantity'], $product['unit_price'],
                     $product['reorder_level']
                 );
-                $stmt->execute();
             }
-            header('Location: index.php?page=products&success=1');
-            exit;
+            
+            if ($stmt->execute()) {
+                header('Location: index.php?page=products&success=1');
+                exit;
+            }
         } catch (Exception $e) {
             if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                $error = "A product with this SKU already exists.";
+                $error = "A product with this SKU already exists in your inventory.";
             } else {
                 error_log($e->getMessage());
                 $error = "An error occurred while saving the product.";
@@ -92,8 +107,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // If editing, get existing product data
 if (isset($_GET['id'])) {
     try {
-        $stmt = $conn->prepare("SELECT * FROM products WHERE id = ?");
-        $stmt->bind_param("i", $_GET['id']);
+        $stmt = $conn->prepare("SELECT * FROM products WHERE id = ? AND user_id = ?");
+        $stmt->bind_param("ii", $_GET['id'], $_SESSION['user_id']);
         $stmt->execute();
         $result = $stmt->get_result();
         if ($existing = $result->fetch_assoc()) {
