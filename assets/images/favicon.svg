@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background -->
+    <rect width="32" height="32" rx="8" fill="#006d8f"/>
+    
+    <!-- Cube design -->
+    <path d="M8 12 L16 8 L24 12 L24 20 L16 24 L8 20 Z" fill="white" fill-opacity="0.9"/>
+    <path d="M16 8 L24 12 L24 20 L16 24" stroke="white" stroke-opacity="0.5" stroke-width="1"/>
+    <path d="M16 8 L8 12 L8 20 L16 24" stroke="white" stroke-opacity="0.5" stroke-width="1"/>
+    
+    <!-- Lines -->
+    <path d="M12 14 L20 14" stroke="#006d8f" stroke-width="1" stroke-linecap="round"/>
+    <path d="M13 16 L19 16" stroke="#006d8f" stroke-width="1" stroke-linecap="round"/>
+    <path d="M14 18 L18 18" stroke="#006d8f" stroke-width="1" stroke-linecap="round"/>
+</svg> 
