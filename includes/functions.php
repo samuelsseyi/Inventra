@@ -360,22 +360,55 @@ function getStatusColor($status) {
 }
 
 /**
- * Send email
+ * Send email using configured mail settings
+ * 
+ * @param string $to Recipient email address
+ * @param string $subject Email subject
+ * @param string $message Email message body
+ * @return bool Whether the email was sent successfully
  */
 function sendEmail($to, $subject, $message) {
-    // Implement your email sending logic here
-    return true; // Temporary return true
+    $headers = [
+        'From' => 'noreply@inventra.com',
+        'Reply-To' => 'support@inventra.com',
+        'X-Mailer' => 'PHP/' . phpversion(),
+        'MIME-Version' => '1.0',
+        'Content-Type' => 'text/html; charset=UTF-8'
+    ];
+    
+    return mail($to, $subject, $message, $headers);
 }
 
 /**
- * Upload file
+ * Upload file with validation and security checks
+ * 
+ * @param array $file The uploaded file array from $_FILES
+ * @param string $destination The destination path for the file
+ * @return bool Whether the file was uploaded successfully
  */
 function uploadFile($file, $destination) {
     try {
+        // Validate file
+        $allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
+        if (!in_array($file['type'], $allowed_types)) {
+            throw new Exception('Invalid file type');
+        }
+        
+        if ($file['size'] > 5242880) { // 5MB max
+            throw new Exception('File too large');
+        }
+        
+        // Create directory if it doesn't exist
         if (!is_dir(dirname($destination))) {
             mkdir(dirname($destination), 0755, true);
         }
-        return move_uploaded_file($file['tmp_name'], $destination);
+        
+        // Move file
+        if (!move_uploaded_file($file['tmp_name'], $destination)) {
+            throw new Exception('Failed to move uploaded file');
+        }
+        
+        return true;
     } catch (Exception $e) {
         error_log("Error uploading file: " . $e->getMessage());
         return false;

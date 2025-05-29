@@ -2,7 +2,7 @@
 // Dashboard page
 require_once 'includes/functions.php';
 
-// Get some basic stats (you'll need to implement these functions)
+// Get dashboard stats
 $total_products = getTotalProducts() ?? 0;
 $low_stock_items = getLowStockItems() ?? 0;
 $total_orders = getTotalOrders() ?? 0;
@@ -157,7 +157,8 @@ $monthly_revenue = getMonthlyRevenue() ?? 0;
 
 <script>
 function reorderProduct(productId) {
-    // Implement reorder functionality
-    alert('Reorder functionality will be implemented here.');
+    if (confirm('Are you sure you want to reorder this product?')) {
+        window.location.href = `index.php?page=stock&action=reorder&product_id=${productId}`;
+    }
 }
 </script> 

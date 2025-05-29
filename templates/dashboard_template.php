@@ -28,7 +28,6 @@ if (!isset($_SESSION['user_id'])) {
             background-color: #f8f9fa;
             overflow-x: hidden;
         }
-        /* Sidebar Styles */
         .sidebar {
             position: fixed;
             top: 0;
@@ -79,13 +78,11 @@ if (!isset($_SESSION['user_id'])) {
             width: 20px;
             text-align: center;
         }
-        /* Main Content Styles */
         .main-content {
             margin-left: var(--sidebar-width);
             padding: 2rem;
             min-height: 100vh;
         }
-        /* Header Styles */
         .dashboard-header {
             background: white;
             padding: 1rem 2rem;
@@ -102,7 +99,6 @@ if (!isset($_SESSION['user_id'])) {
             right: 0;
             left: auto;
         }
-        /* Card Styles */
         .dashboard-card {
             background: white;
             border-radius: 1rem;
@@ -110,7 +106,6 @@ if (!isset($_SESSION['user_id'])) {
             padding: 1.5rem;
             height: 100%;
         }
-        /* Enhanced Mobile Responsive Styles */
         @media (max-width: 768px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -140,7 +135,6 @@ if (!isset($_SESSION['user_id'])) {
                 margin-bottom: 1rem;
             }
         }
-        /* Add mobile menu toggle button */
         .mobile-menu-toggle {
             display: none;
             background: none;
@@ -155,12 +149,10 @@ if (!isset($_SESSION['user_id'])) {
                 display: block;
             }
         }
-        /* Improved table responsiveness */
         .table-responsive {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
         }
-        /* Form responsiveness */
         .form-group {
             margin-bottom: 1rem;
         }
