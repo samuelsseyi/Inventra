@@ -4,13 +4,21 @@ $current_page = 'reports';
 
 require_once 'config/database.php';
 require_once 'includes/functions.php';
+require_once 'includes/auth.php';
+
+// Check if user has permission to view reports (Admin or Manager only)
+if (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'manager'])) {
+    header('HTTP/1.1 403 Forbidden');
+    echo 'Access denied. Only administrators and managers can view reports.';
+    exit();
+}
 
 $error = null;
 
 try {
     // Get total products value
-    $stmt = $conn->prepare("SELECT SUM(quantity * unit_price) as total_value FROM products WHERE user_id = ?");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt = $conn->prepare("SELECT SUM(quantity * price) as total_value FROM products WHERE business_code = ?");
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $total_value = $stmt->get_result()->fetch_assoc()['total_value'] ?? 0;
 
@@ -19,10 +27,10 @@ try {
         SELECT p.*, c.name as category_name 
         FROM products p 
         LEFT JOIN categories c ON p.category_id = c.id 
-        WHERE p.user_id = ? AND p.quantity <= p.reorder_level 
+        WHERE p.business_code = ? AND p.quantity <= p.min_stock 
         ORDER BY p.quantity ASC
     ");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $low_stock = [];
@@ -37,12 +45,12 @@ try {
             type,
             SUM(quantity) as total_quantity
         FROM stock_movements
-        WHERE user_id = ?
+        WHERE business_code = ?
         GROUP BY DATE(created_at), type
         ORDER BY date DESC
         LIMIT 7
     ");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $movements = [];
@@ -53,14 +61,14 @@ try {
     // Get top products by value
     $stmt = $conn->prepare("
         SELECT p.*, c.name as category_name,
-               (p.quantity * p.unit_price) as total_value
+               (p.quantity * p.price) as total_value
         FROM products p
         LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.user_id = ?
+        WHERE p.business_code = ?
         ORDER BY total_value DESC
         LIMIT 5
     ");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $top_products = [];
@@ -112,7 +120,7 @@ ob_start();
                                 <th>Product</th>
                                 <th>Category</th>
                                 <th>Current Stock</th>
-                                <th>Reorder Level</th>
+                                <th>Min Stock <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="The minimum quantity before a product is considered low in stock. Restock when current stock falls below this level."></i></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -125,7 +133,7 @@ ob_start();
                                         <?php echo number_format($product['quantity']); ?>
                                     </span>
                                 </td>
-                                <td><?php echo number_format($product['reorder_level']); ?></td>
+                                <td><?php echo number_format($product['min_stock']); ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>

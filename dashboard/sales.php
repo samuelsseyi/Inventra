@@ -23,8 +23,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->begin_transaction();
 
             // Get product details
-            $stmt = $conn->prepare("SELECT name, quantity as current_stock, unit_price FROM products WHERE id = ? AND user_id = ?");
-            $stmt->bind_param("ii", $product_id, $_SESSION['user_id']);
+            $stmt = $conn->prepare("SELECT name, quantity as current_stock, price as unit_price FROM products WHERE id = ? AND business_code = ?");
+            $stmt->bind_param("is", $product_id, $_SESSION['business_code']);
             $stmt->execute();
             $result = $stmt->get_result();
             $product = $result->fetch_assoc();
@@ -41,18 +41,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $total_amount = $quantity * $product['unit_price'];
 
             // Record sale
-            $stmt = $conn->prepare("INSERT INTO sales (user_id, product_id, quantity, unit_price, total_amount, customer_name, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("iiiddss", $_SESSION['user_id'], $product_id, $quantity, $product['unit_price'], $total_amount, $customer_name, $payment_method);
+            $stmt = $conn->prepare("INSERT INTO sales (user_id, business_code, product_id, quantity, unit_price, total_amount, customer_name, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("isiiddss", $_SESSION['user_id'], $_SESSION['business_code'], $product_id, $quantity, $product['unit_price'], $total_amount, $customer_name, $payment_method);
             $stmt->execute();
 
             // Update stock
-            $stmt = $conn->prepare("UPDATE products SET quantity = quantity - ? WHERE id = ? AND user_id = ?");
-            $stmt->bind_param("iii", $quantity, $product_id, $_SESSION['user_id']);
+            $stmt = $conn->prepare("UPDATE products SET quantity = quantity - ? WHERE id = ? AND business_code = ?");
+            $stmt->bind_param("iis", $quantity, $product_id, $_SESSION['business_code']);
             $stmt->execute();
 
             // Add stock movement record
-            $stmt = $conn->prepare("INSERT INTO stock_movements (user_id, product_id, type, quantity, reason) VALUES (?, ?, 'out', ?, 'Sale')");
-            $stmt->bind_param("iii", $_SESSION['user_id'], $product_id, $quantity);
+            $stmt = $conn->prepare("INSERT INTO stock_movements (user_id, business_code, product_id, type, quantity, reason) VALUES (?, ?, ?, 'out', ?, 'Sale')");
+            $stmt->bind_param("isii", $_SESSION['user_id'], $_SESSION['business_code'], $product_id, $quantity);
             $stmt->execute();
 
             // Commit transaction
@@ -68,8 +68,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get products for dropdown
 try {
-    $stmt = $conn->prepare("SELECT id, name, quantity, unit_price FROM products WHERE quantity > 0 AND user_id = ? ORDER BY name");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt = $conn->prepare("SELECT id, name, quantity, price as unit_price FROM products WHERE quantity > 0 AND business_code = ? ORDER BY name");
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $products = [];
@@ -87,11 +87,11 @@ try {
         SELECT s.*, p.name as product_name 
         FROM sales s
         JOIN products p ON s.product_id = p.id
-        WHERE s.user_id = ?
+        WHERE s.business_code = ?
         ORDER BY s.created_at DESC 
         LIMIT 10
     ");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $sales = [];
@@ -106,6 +106,9 @@ try {
 // Start output buffering
 ob_start();
 ?>
+
+<!-- Add Select2 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
 <!-- Sales Content -->
 <div class="row g-4">
@@ -124,8 +127,8 @@ ob_start();
 
             <form method="post" class="needs-validation" novalidate>
                 <div class="mb-3">
-                    <label class="form-label">Product *</label>
-                    <select class="form-select" name="product_id" id="product-select" required>
+                    <label class="form-label">Product * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Select the product being sold. Only products with available stock are shown."></i></label>
+                    <select class="form-select" name="product_id" id="product-select" required style="width: 100%">
                         <option value="">Select Product</option>
                         <?php foreach ($products as $product): ?>
                         <option value="<?php echo $product['id']; ?>" 
@@ -140,23 +143,23 @@ ob_start();
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Quantity *</label>
+                    <label class="form-label">Quantity * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Enter the number of items sold. Cannot exceed available stock."></i></label>
                     <input type="number" class="form-control" name="quantity" id="quantity" min="1" required>
                     <div class="form-text">Available stock: <span id="available-stock">0</span></div>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Total Amount</label>
+                    <label class="form-label">Total Amount <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="This is automatically calculated based on quantity and unit price."></i></label>
                     <div class="form-control bg-light">₦<span id="total-amount">0.00</span></div>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Customer Name</label>
+                    <label class="form-label">Customer Name <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Optionally, enter the name of the customer for this sale."></i></label>
                     <input type="text" class="form-control" name="customer_name">
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Payment Method *</label>
+                    <label class="form-label">Payment Method * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Select how the customer paid for this sale."></i></label>
                     <select class="form-select" name="payment_method" required>
                         <option value="cash">Cash</option>
                         <option value="transfer">Bank Transfer</option>
@@ -192,7 +195,7 @@ ob_start();
                                 <th>Quantity</th>
                                 <th>Unit Price</th>
                                 <th>Total</th>
-                                <th>Payment</th>
+                                <th>Payment <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Shows how the customer paid: Cash, Bank Transfer, or POS."></i></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -226,7 +229,11 @@ ob_start();
 </div>
 
 <?php
+// Add Select2 JS
 $page_scripts = <<<SCRIPTS
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const productSelect = document.getElementById('product-select');
@@ -254,6 +261,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     productSelect.addEventListener('change', updateCalculations);
     quantityInput.addEventListener('input', updateCalculations);
+
+    // Initialize Select2 for product dropdown
+    if (window.jQuery) {
+        $('#product-select').select2({
+            placeholder: 'Search or select a product',
+            allowClear: true,
+            width: '100%'
+        });
+    }
 });
 </script>
 SCRIPTS;

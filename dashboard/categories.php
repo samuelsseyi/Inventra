@@ -4,6 +4,14 @@ $current_page = 'categories';
 
 require_once 'config/database.php';
 require_once 'includes/functions.php';
+require_once 'includes/auth.php';
+
+// Check if user has permission to manage categories (Admin or Manager only)
+if (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'manager'])) {
+    header('HTTP/1.1 403 Forbidden');
+    echo 'Access denied. Only administrators and managers can manage categories.';
+    exit();
+}
 
 $error = null;
 $success = null;
@@ -20,23 +28,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             if ($id) {
                 // Update existing category (verify ownership first)
-                $stmt = $conn->prepare("SELECT user_id FROM categories WHERE id = ?");
+                $stmt = $conn->prepare("SELECT business_code FROM categories WHERE id = ?");
                 $stmt->bind_param("i", $id);
                 $stmt->execute();
                 $result = $stmt->get_result();
                 $category = $result->fetch_assoc();
                 
-                if (!$category || $category['user_id'] !== $_SESSION['user_id']) {
+                if (!$category || $category['business_code'] !== $_SESSION['business_code']) {
                     throw new Exception("Category not found or access denied.");
                 }
                 
                 // Update category
-                $stmt = $conn->prepare("UPDATE categories SET name = ?, description = ? WHERE id = ? AND user_id = ?");
-                $stmt->bind_param("ssii", $name, $description, $id, $_SESSION['user_id']);
+                $stmt = $conn->prepare("UPDATE categories SET name = ?, description = ? WHERE id = ? AND business_code = ?");
+                $stmt->bind_param("ssis", $name, $description, $id, $_SESSION['business_code']);
             } else {
                 // Insert new category
-                $stmt = $conn->prepare("INSERT INTO categories (user_id, name, description) VALUES (?, ?, ?)");
-                $stmt->bind_param("iss", $_SESSION['user_id'], $name, $description);
+                $stmt = $conn->prepare("INSERT INTO categories (user_id, business_code, name, description) VALUES (?, ?, ?, ?)");
+                $stmt->bind_param("isss", $_SESSION['user_id'], $_SESSION['business_code'], $name, $description);
             }
             
             if ($stmt->execute()) {
@@ -49,10 +57,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all categories for the current user
+// Get all categories for the current business
 try {
-    $stmt = $conn->prepare("SELECT * FROM categories WHERE user_id = ? ORDER BY name");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt = $conn->prepare("SELECT * FROM categories WHERE business_code = ? ORDER BY name");
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $categories = [];
@@ -85,12 +93,12 @@ ob_start();
 
             <form method="post" class="needs-validation" novalidate>
                 <div class="mb-3">
-                    <label class="form-label">Category Name *</label>
+                    <label class="form-label">Category Name * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Enter a name for your product category (e.g., Beverages, Electronics)."></i></label>
                     <input type="text" class="form-control" name="name" required>
                 </div>
                 
                 <div class="mb-3">
-                    <label class="form-label">Description</label>
+                    <label class="form-label">Description <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Optionally, describe what types of products belong in this category."></i></label>
                     <textarea class="form-control" name="description" rows="3"></textarea>
                 </div>
 
@@ -119,7 +127,7 @@ ob_start();
                             <tr>
                                 <th>Category Name</th>
                                 <th>Description</th>
-                                <th>Products</th>
+                                <th>Products <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Number of products assigned to this category."></i></th>
                                 <th>Actions</th>
                             </tr>
                         </thead>

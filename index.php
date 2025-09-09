@@ -40,7 +40,8 @@ $allowed_pages = [
     'sales' => 'dashboard/sales.php',
     'reports' => 'dashboard/reports.php',
     'profile' => 'dashboard/profile.php',
-    'delete-product' => 'dashboard/delete_product.php'
+    'delete-product' => 'dashboard/delete_product.php',
+    'users' => 'dashboard/users.php'
 ];
 
 // Check if the requested page exists

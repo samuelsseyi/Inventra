@@ -9,7 +9,7 @@ $error = null;
 $success = null;
 
 // Get user data
-$stmt = $conn->prepare("SELECT username, email, business_name, business_code FROM users WHERE id = ?");
+$stmt = $conn->prepare("SELECT username, email, business_name, business_code, is_verified, verification_sent_at FROM users WHERE id = ?");
 $stmt->bind_param("i", $_SESSION['user_id']);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
@@ -79,6 +79,25 @@ ob_start();
     <div class="col-md-8">
         <div class="dashboard-card">
             <h5 class="mb-4">Profile Settings</h5>
+            <?php if (isset($user['is_verified']) && (int)$user['is_verified'] !== 1): ?>
+                <div class="alert alert-warning d-flex align-items-center" role="alert">
+                    <i class="fas fa-circle-exclamation me-2"></i>
+                    <div>
+                        Your email is <strong>not verified</strong>. Some features may be restricted. Please verify your email.
+                        <?php if (!empty($user['verification_sent_at'])): ?>
+                            <div class="small text-muted mt-1">Verification sent: <?php echo date('M j, Y g:i A', strtotime($user['verification_sent_at'])); ?></div>
+                        <?php endif; ?>
+                        <div class="mt-2">
+                            <a href="auth/resend_verification.php" class="btn btn-sm btn-outline-primary"><i class="fas fa-paper-plane me-1"></i>Resend Verification Email</a>
+                        </div>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="alert alert-success d-flex align-items-center" role="alert">
+                    <i class="fas fa-badge-check me-2"></i>
+                    <div>Your email is verified.</div>
+                </div>
+            <?php endif; ?>
             
             <?php if ($error): ?>
                 <div class="alert alert-danger"><?php echo $error; ?></div>

@@ -255,11 +255,13 @@ function getDashboardStats($business_code) {
 /**
  * Get total number of products in inventory
  */
-function getTotalProducts() {
+function getTotalProducts($business_code) {
     global $conn;
     try {
-        $result = $conn->query("SELECT COUNT(*) as total FROM products");
-        $row = $result->fetch_assoc();
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM products WHERE business_code = ?");
+        $stmt->bind_param("s", $business_code);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
         return $row['total'];
     } catch (Exception $e) {
         error_log("Error getting total products: " . $e->getMessage());
@@ -270,11 +272,13 @@ function getTotalProducts() {
 /**
  * Get number of items with stock below minimum level
  */
-function getLowStockItems() {
+function getLowStockItems($business_code) {
     global $conn;
     try {
-        $result = $conn->query("SELECT COUNT(*) as total FROM products WHERE current_stock < min_stock");
-        $row = $result->fetch_assoc();
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM products WHERE quantity <= min_stock AND business_code = ?");
+        $stmt->bind_param("s", $business_code);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
         return $row['total'];
     } catch (Exception $e) {
         error_log("Error getting low stock items: " . $e->getMessage());
@@ -368,15 +372,151 @@ function getStatusColor($status) {
  * @return bool Whether the email was sent successfully
  */
 function sendEmail($to, $subject, $message) {
-    $headers = [
-        'From' => 'noreply@inventra.com',
-        'Reply-To' => 'support@inventra.com',
-        'X-Mailer' => 'PHP/' . phpversion(),
-        'MIME-Version' => '1.0',
-        'Content-Type' => 'text/html; charset=UTF-8'
-    ];
-    
-    return mail($to, $subject, $message, $headers);
+    // Load mail config
+    $mailConfigPath = dirname(__FILE__) . '/../config/mail.php';
+    if (file_exists($mailConfigPath)) {
+        require $mailConfigPath;
+    }
+
+    $driver = isset($MAIL_DRIVER) ? $MAIL_DRIVER : 'log';
+    $fromAddress = isset($MAIL_FROM_ADDRESS) ? $MAIL_FROM_ADDRESS : 'noreply@inventra.local';
+    $fromName = isset($MAIL_FROM_NAME) ? $MAIL_FROM_NAME : 'Inventra';
+
+    // Compose headers for PHP mail
+    $headers = "MIME-Version: 1.0\r\n" .
+               "Content-type: text/html; charset=UTF-8\r\n" .
+               "From: {$fromName} <{$fromAddress}>\r\n" .
+               "Reply-To: {$fromAddress}\r\n" .
+               'X-Mailer: PHP/' . phpversion();
+
+    // Driver: log emails to storage for local testing
+    if ($driver === 'log') {
+        $dir = dirname(__FILE__) . '/../storage/mails';
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        $filename = $dir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-z0-9_.-]+/i', '_', $to) . '.html';
+        $html = '<h3>To: ' . htmlspecialchars($to) . '</h3>' .
+                '<h4>Subject: ' . htmlspecialchars($subject) . '</h4>' .
+                '<div style="padding:12px;border:1px solid #eee;border-radius:8px;">' . $message . '</div>';
+        return file_put_contents($filename, $html) !== false;
+    }
+
+    // Driver: basic PHP mail
+    if ($driver === 'mail') {
+        return mail($to, $subject, $message, $headers);
+    }
+
+    // Driver: smtp (real SMTP sending via fsockopen; supports tls and ssl)
+    if ($driver === 'smtp') {
+        $host = isset($SMTP_HOST) ? $SMTP_HOST : '';
+        $port = isset($SMTP_PORT) ? (int)$SMTP_PORT : 587;
+        $encryption = isset($SMTP_ENCRYPTION) ? strtolower($SMTP_ENCRYPTION) : 'tls';
+        $username = isset($SMTP_USERNAME) ? $SMTP_USERNAME : '';
+        $password = isset($SMTP_PASSWORD) ? $SMTP_PASSWORD : '';
+
+        if ($host === '' || $username === '' || $password === '') {
+            error_log('SMTP not configured. Falling back to log.');
+            $dir = dirname(__FILE__) . '/../storage/mails';
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0777, true);
+            }
+            $filename = $dir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-z0-9_.-]+/i', '_', $to) . '.html';
+            $html = '<h3>To: ' . htmlspecialchars($to) . '</h3>' .
+                    '<h4>Subject: ' . htmlspecialchars($subject) . '</h4>' .
+                    '<div style="padding:12px;border:1px solid #eee;border-radius:8px;">' . $message . '</div>';
+            return file_put_contents($filename, $html) !== false;
+        }
+
+        $protocolHost = $host;
+        if ($encryption === 'ssl') {
+            $protocolHost = 'ssl://' . $host;
+        }
+
+        $socket = @fsockopen($protocolHost, $port, $errno, $errstr, 15);
+        if (!$socket) {
+            error_log("SMTP connect error: $errstr ($errno)");
+            return false;
+        }
+
+        $read = function() use ($socket) {
+            $data = '';
+            while ($str = fgets($socket, 515)) {
+                $data .= $str;
+                if (substr($str, 3, 1) == ' ') break;
+            }
+            return $data;
+        };
+        $write = function($cmd) use ($socket) {
+            fputs($socket, $cmd . "\r\n");
+        };
+
+        $read();
+        $write('EHLO inventra.local');
+        $resp = $read();
+
+        if ($encryption === 'tls') {
+            $write('STARTTLS');
+            $resp = $read();
+            if (strpos($resp, '220') !== 0) {
+                fclose($socket);
+                error_log('STARTTLS failed: ' . $resp);
+                return false;
+            }
+            if (!stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                fclose($socket);
+                error_log('TLS negotiation failed');
+                return false;
+            }
+            $write('EHLO inventra.local');
+            $read();
+        }
+
+        $write('AUTH LOGIN');
+        $read();
+        $write(base64_encode($username));
+        $read();
+        $write(base64_encode($password));
+        $authResp = $read();
+        if (strpos($authResp, '235') !== 0) {
+            fclose($socket);
+            error_log('SMTP auth failed: ' . $authResp);
+            return false;
+        }
+
+        $write('MAIL FROM: <' . $fromAddress . '>');
+        $read();
+        $write('RCPT TO: <' . $to . '>');
+        $read();
+        $write('DATA');
+        $read();
+
+        $boundary = 'bnd_' . md5(uniqid((string)mt_rand(), true));
+        $headersSmtp = '';
+        $headersSmtp .= 'From: ' . $fromName . ' <' . $fromAddress . ">\r\n";
+        $headersSmtp .= 'MIME-Version: 1.0' . "\r\n";
+        $headersSmtp .= 'Content-Type: text/html; charset=UTF-8' . "\r\n";
+
+        $data = 'Subject: ' . $subject . "\r\n" .
+                $headersSmtp .
+                "\r\n" . $message . "\r\n.";
+        $write($data);
+        $read();
+        $write('QUIT');
+        fclose($socket);
+        return true;
+    }
+
+    // Default to log
+    $dir = dirname(__FILE__) . '/../storage/mails';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0777, true);
+    }
+    $filename = $dir . '/' . date('Ymd_His') . '_' . preg_replace('/[^a-z0-9_.-]+/i', '_', $to) . '.html';
+    $html = '<h3>To: ' . htmlspecialchars($to) . '</h3>' .
+            '<h4>Subject: ' . htmlspecialchars($subject) . '</h4>' .
+            '<div style="padding:12px;border:1px solid #eee;border-radius:8px;">' . $message . '</div>';
+    return file_put_contents($filename, $html) !== false;
 }
 
 /**

@@ -44,8 +44,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = "Email address is already registered.";
         } else {
             // Attempt to register
-            if (registerUser($username, $email, $password, $business_name)) {
-                $success = "Registration successful! Please login to continue.";
+            $new_user_id = registerUser($username, $email, $password, $business_name);
+            if ($new_user_id) {
+                // Auto-login after successful registration
+                $stmt2 = $conn->prepare("SELECT * FROM users WHERE id = ?");
+                $stmt2->bind_param("i", $new_user_id);
+                $stmt2->execute();
+                $user = $stmt2->get_result()->fetch_assoc();
+                if ($user) {
+                    $_SESSION['user_id'] = $user['id'];
+                    $_SESSION['username'] = $user['username'];
+                    $_SESSION['business_name'] = $user['business_name'];
+                    $_SESSION['business_code'] = $user['business_code'];
+                    $_SESSION['user_role'] = $user['role'];
+                    header("Location: ../index.php?page=dashboard");
+                    exit();
+                } else {
+                    $success = "Registration successful. Verification email sent. Please login.";
+                }
             } else {
                 $error = "Registration failed. Please try again.";
             }

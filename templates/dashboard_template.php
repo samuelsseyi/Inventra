@@ -175,41 +175,77 @@ if (!isset($_SESSION['user_id'])) {
             <h4 class="mt-3 text-white">Inventra</h4>
         </div>
         <ul class="nav flex-column">
+            <?php 
+            $user_role = $_SESSION['user_role'] ?? 'cashier';
+            ?>
+            
+            <!-- Dashboard - All roles can access -->
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'dashboard' ? 'active' : ''; ?>" href="index.php?page=dashboard">
                     <i class="fas fa-home me-2"></i>Dashboard
                 </a>
             </li>
+            
+            <!-- Add Product - Admin and Manager only -->
+            <?php if ($user_role === 'admin' || $user_role === 'manager'): ?>
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'add_product' ? 'active' : ''; ?>" href="index.php?page=add-product">
                     <i class="fas fa-plus me-2"></i>Add Product
                 </a>
             </li>
+            <?php endif; ?>
+            
+            <!-- Products List - Admin and Manager only -->
+            <?php if ($user_role === 'admin' || $user_role === 'manager'): ?>
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'products_list' ? 'active' : ''; ?>" href="index.php?page=products">
                     <i class="fas fa-box me-2"></i>Products List
                 </a>
             </li>
+            <?php endif; ?>
+            
+            <!-- Categories - Admin and Manager only -->
+            <?php if ($user_role === 'admin' || $user_role === 'manager'): ?>
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'categories' ? 'active' : ''; ?>" href="index.php?page=categories">
                     <i class="fas fa-tags me-2"></i>Categories
                 </a>
             </li>
+            <?php endif; ?>
+            
+            <!-- Stock Management - Admin and Manager only -->
+            <?php if ($user_role === 'admin' || $user_role === 'manager'): ?>
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'stock' ? 'active' : ''; ?>" href="index.php?page=stock">
                     <i class="fas fa-boxes me-2"></i>Stock Management
                 </a>
             </li>
+            <?php endif; ?>
+            
+            <!-- Sales - All roles can access -->
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'sales' ? 'active' : ''; ?>" href="index.php?page=sales">
                     <i class="fas fa-shopping-cart me-2"></i>Sales
                 </a>
             </li>
+            
+            <!-- Reports - Admin and Manager only -->
+            <?php if ($user_role === 'admin' || $user_role === 'manager'): ?>
             <li class="nav-item">
                 <a class="nav-link <?php echo $current_page === 'reports' ? 'active' : ''; ?>" href="index.php?page=reports">
                     <i class="fas fa-chart-bar me-2"></i>Reports
                 </a>
             </li>
+            <?php endif; ?>
+            
+            <!-- User Management - Admin only -->
+            <?php if ($user_role === 'admin'): ?>
+            <li class="nav-item">
+                <a class="nav-link <?php echo $current_page === 'users' ? 'active' : ''; ?>" href="index.php?page=users">
+                    <i class="fas fa-users-cog me-2"></i>User Management
+                </a>
+            </li>
+            <?php endif; ?>
         </ul>
     </nav>
 

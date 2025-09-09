@@ -32,11 +32,36 @@ function registerUser($username, $email, $password, $business_name) {
         $business_code = 'BIZ' . rand(1000, 9999);
         
         // Prepare SQL statement to prevent injection
-        $stmt = $conn->prepare("INSERT INTO users (username, email, password, business_name, business_code, created_at) 
-                               VALUES (?, ?, ?, ?, ?, NOW())");
+        $stmt = $conn->prepare("INSERT INTO users (username, email, password, business_name, business_code, role, created_at, is_verified) 
+                               VALUES (?, ?, ?, ?, ?, 'admin', NOW(), 0)");
         
         $stmt->bind_param("sssss", $username, $email, $hashed_password, $business_name, $business_code);
-        return $stmt->execute();
+        if ($stmt->execute()) {
+            $newUserId = $conn->insert_id;
+            // Create verification token
+            $token = bin2hex(random_bytes(32));
+            $expiresAt = (new DateTime('+1 day'))->format('Y-m-d H:i:s');
+            $stmtV = $conn->prepare("INSERT INTO email_verifications (user_id, token, expires_at) VALUES (?, ?, ?)");
+            $stmtV->bind_param("iss", $newUserId, $token, $expiresAt);
+            $stmtV->execute();
+            // Update users.verification_sent_at
+            $conn->query("UPDATE users SET verification_sent_at = NOW() WHERE id = " . (int)$newUserId);
+
+            // Send verification email
+            $verifyUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http') . 
+                         '://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NAME']) . '/../auth/verify.php?token=' . urlencode($token);
+            $subject = 'Verify your Inventra account';
+            $message = '<p>Hello ' . htmlspecialchars($username) . ',</p>' .
+                       '<p>Please verify your email to activate your account.</p>' .
+                       '<p><a href="' . $verifyUrl . '">Click here to verify</a></p>' .
+                       '<p>This link will expire in 24 hours.</p>';
+            if (function_exists('sendEmail')) {
+                sendEmail($email, $subject, $message);
+            }
+            return $newUserId;
+        } else {
+            return false;
+        }
     } catch (Exception $e) {
         error_log("Error registering user: " . $e->getMessage());
         return false;

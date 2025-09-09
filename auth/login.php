@@ -24,9 +24,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($email) || empty($password)) {
         $error = "Please fill in all required fields.";
     } else {
-        if (loginUser($email, $password)) {
+        $loginResult = loginUser($email, $password);
+        if ($loginResult === true) {
             header("Location: ../index.php");
             exit();
+        } elseif ($loginResult === 'unverified') {
+            $error = "Your email is not verified. Please check your email for a verification link.";
         } else {
             $error = "Invalid email or password.";
         }

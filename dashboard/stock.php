@@ -4,6 +4,14 @@ $current_page = 'stock';
 
 require_once 'config/database.php';
 require_once 'includes/functions.php';
+require_once 'includes/auth.php';
+
+// Check if user has permission to manage stock (Admin or Manager only)
+if (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'manager'])) {
+    header('HTTP/1.1 403 Forbidden');
+    echo 'Access denied. Only administrators and managers can manage stock.';
+    exit();
+}
 
 $error = null;
 $success = null;
@@ -22,9 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Start transaction
             $conn->begin_transaction();
 
-            // Verify product ownership
-            $stmt = $conn->prepare("SELECT id FROM products WHERE id = ? AND user_id = ?");
-            $stmt->bind_param("ii", $product_id, $_SESSION['user_id']);
+            // Verify product ownership (within same business)
+            $stmt = $conn->prepare("SELECT id FROM products WHERE id = ? AND business_code = ?");
+            $stmt->bind_param("is", $product_id, $_SESSION['business_code']);
             $stmt->execute();
             $result = $stmt->get_result();
             if (!$result->fetch_assoc()) {
@@ -32,14 +40,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Add stock movement record
-            $stmt = $conn->prepare("INSERT INTO stock_movements (user_id, product_id, type, quantity, reason) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("iisis", $_SESSION['user_id'], $product_id, $type, $quantity, $reason);
+            $stmt = $conn->prepare("INSERT INTO stock_movements (user_id, business_code, product_id, type, quantity, reason) VALUES (?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param("isisis", $_SESSION['user_id'], $_SESSION['business_code'], $product_id, $type, $quantity, $reason);
             $stmt->execute();
 
             // Update product quantity
             $quantity_change = $type === 'in' ? $quantity : -$quantity;
-            $stmt = $conn->prepare("UPDATE products SET quantity = quantity + ? WHERE id = ? AND user_id = ?");
-            $stmt->bind_param("iii", $quantity_change, $product_id, $_SESSION['user_id']);
+            $stmt = $conn->prepare("UPDATE products SET quantity = quantity + ? WHERE id = ? AND business_code = ?");
+            $stmt->bind_param("iis", $quantity_change, $product_id, $_SESSION['business_code']);
             $stmt->execute();
 
             // Commit transaction
@@ -55,8 +63,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Get products for dropdown
 try {
-    $stmt = $conn->prepare("SELECT id, name, quantity FROM products WHERE user_id = ? ORDER BY name");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt = $conn->prepare("SELECT id, name, quantity FROM products WHERE business_code = ? ORDER BY name");
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $products = [];
@@ -74,11 +82,11 @@ try {
         SELECT sm.*, p.name as product_name 
         FROM stock_movements sm
         JOIN products p ON sm.product_id = p.id
-        WHERE sm.user_id = ?
+        WHERE sm.business_code = ?
         ORDER BY sm.created_at DESC 
         LIMIT 10
     ");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $stock_movements = [];
@@ -111,8 +119,8 @@ ob_start();
 
             <form method="post" class="needs-validation" novalidate>
                 <div class="mb-3">
-                    <label class="form-label">Product *</label>
-                    <select class="form-select" name="product_id" required>
+                    <label class="form-label">Product * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Select the product you want to add or remove stock for."></i></label>
+                    <select class="form-select" name="product_id" id="product-select" required style="width: 100%">
                         <option value="">Select Product</option>
                         <?php foreach ($products as $product): ?>
                         <option value="<?php echo $product['id']; ?>">
@@ -124,7 +132,7 @@ ob_start();
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Movement Type *</label>
+                    <label class="form-label">Movement Type * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Choose 'Stock In' to add stock, or 'Stock Out' to remove stock."></i></label>
                     <select class="form-select" name="type" required>
                         <option value="in">Stock In</option>
                         <option value="out">Stock Out</option>
@@ -132,12 +140,12 @@ ob_start();
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Quantity *</label>
+                    <label class="form-label">Quantity * <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Enter the number of items to add or remove."></i></label>
                     <input type="number" class="form-control" name="quantity" min="1" required>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label">Reason</label>
+                    <label class="form-label">Reason <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Optionally, provide a reason for this stock movement (e.g., new delivery, sale, damage)."></i></label>
                     <textarea class="form-control" name="reason" rows="2"></textarea>
                 </div>
 
@@ -166,7 +174,7 @@ ob_start();
                             <tr>
                                 <th>Date</th>
                                 <th>Product</th>
-                                <th>Type</th>
+                                <th>Type <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Stock In increases inventory, Stock Out decreases it."></i></th>
                                 <th>Quantity</th>
                                 <th>Reason</th>
                             </tr>
@@ -194,6 +202,32 @@ ob_start();
 </div>
 
 <?php
+$page_scripts = <<<SCRIPTS
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Debug logs
+    console.log('DOMContentLoaded fired on stock page');
+    console.log('window.jQuery:', typeof window.jQuery !== 'undefined');
+    console.log('window.Select2:', typeof window.Select2 !== 'undefined');
+    var productSelect = document.getElementById('product-select');
+    console.log('productSelect exists:', !!productSelect);
+    // Initialize Select2 for product dropdown
+    if (window.jQuery) {
+        $('#product-select').select2({
+            placeholder: 'Search or select a product',
+            allowClear: true,
+            width: '100%'
+        });
+        console.log('Select2 initialization attempted');
+    } else {
+        console.log('jQuery not loaded, Select2 not initialized');
+    }
+});
+</script>
+SCRIPTS;
 $page_content = ob_get_clean();
 require_once 'templates/dashboard_template.php';
 ?> 

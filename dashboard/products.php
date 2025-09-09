@@ -4,6 +4,14 @@ $current_page = 'products_list';
 
 require_once 'config/database.php';
 require_once 'includes/functions.php';
+require_once 'includes/auth.php';
+
+// Check if user has permission to view products (Admin or Manager only)
+if (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'manager'])) {
+    header('HTTP/1.1 403 Forbidden');
+    echo 'Access denied. Only administrators and managers can view products.';
+    exit();
+}
 
 // Handle search and filters
 $search = $_GET['search'] ?? '';
@@ -14,9 +22,9 @@ $sort = $_GET['sort'] ?? 'name_asc';
 $query = "SELECT p.*, c.name as category_name 
           FROM products p 
           LEFT JOIN categories c ON p.category_id = c.id 
-          WHERE p.user_id = ?";
-$params = [$_SESSION['user_id']];
-$types = "i";
+          WHERE p.business_code = ?";
+$params = [$_SESSION['business_code']];
+$types = "s";
 
 // Add search condition
 if (!empty($search)) {
@@ -49,9 +57,9 @@ switch ($sort) {
 }
 
 try {
-    // Get categories for filter (only user's categories)
-    $stmt = $conn->prepare("SELECT id, name FROM categories WHERE user_id = ? ORDER BY name");
-    $stmt->bind_param("i", $_SESSION['user_id']);
+    // Get categories for filter (only business categories)
+    $stmt = $conn->prepare("SELECT id, name FROM categories WHERE business_code = ? ORDER BY name");
+    $stmt->bind_param("s", $_SESSION['business_code']);
     $stmt->execute();
     $result = $stmt->get_result();
     $categories = [];
@@ -143,7 +151,7 @@ ob_start();
                                 <th>Product Name</th>
                                 <th>SKU</th>
                                 <th>Category</th>
-                                <th>Stock</th>
+                                <th>Stock <i class="fas fa-info-circle text-info ms-1" data-bs-toggle="tooltip" title="Green means stock is above reorder level. Red means stock is low and needs restocking."></i></th>
                                 <th>Unit Price</th>
                                 <th>Actions</th>
                             </tr>
@@ -155,18 +163,15 @@ ob_start();
                                     <div class="d-flex align-items-center">
                                         <div>
                                             <h6 class="mb-0"><?php echo htmlspecialchars($product['name']); ?></h6>
-                                            <small class="text-muted"><?php echo htmlspecialchars($product['description']); ?></small>
                                         </div>
                                     </div>
                                 </td>
                                 <td><?php echo htmlspecialchars($product['sku']); ?></td>
                                 <td><?php echo htmlspecialchars($product['category_name'] ?? 'Uncategorized'); ?></td>
                                 <td>
-                                    <span class="badge bg-<?php echo $product['quantity'] <= $product['reorder_level'] ? 'danger' : 'success'; ?>">
-                                        <?php echo number_format($product['quantity']); ?>
-                                    </span>
+                                <?php echo number_format($product['quantity']); ?>
                                 </td>
-                                <td>₦<?php echo number_format($product['unit_price'], 2); ?></td>
+                                <td>₦<?php echo number_format($product['price'], 2); ?></td>
                                 <td>
                                     <div class="btn-group">
                                         <a href="index.php?page=add-product&id=<?php echo $product['id']; ?>" class="btn btn-sm btn-outline-primary">
